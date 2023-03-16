@@ -1,6 +1,6 @@
 # Cubic RCE Bot
 
-[![Build](https://github.com/database64128/cubic-rce-bot/actions/workflows/build.yml/badge.svg)](https://github.com/database64128/cubic-rce-bot/actions/workflows/build.yml)
+[![Test](https://github.com/database64128/cubic-rce-bot/actions/workflows/test.yml/badge.svg)](https://github.com/database64128/cubic-rce-bot/actions/workflows/test.yml)
 [![Release](https://github.com/database64128/cubic-rce-bot/actions/workflows/release.yml/badge.svg)](https://github.com/database64128/cubic-rce-bot/actions/workflows/release.yml)
 [![AUR version](https://img.shields.io/aur/version/cubic-rce-bot-git?label=cubic-rce-bot-git)](https://aur.archlinux.org/packages/cubic-rce-bot-git)
 
