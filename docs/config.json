@@ -1,0 +1,18 @@
+{
+    "token": "1234567:4TT8bAc8GHUspu3ERYn-KGcvsvGB9u_n4ddy",
+    "url": "",
+    "users": [
+        {
+            "id": 123456789,
+            "commands": [
+                [
+                    "date"
+                ],
+                [
+                    "date",
+                    "-Iseconds"
+                ]
+            ]
+        }
+    ]
+}

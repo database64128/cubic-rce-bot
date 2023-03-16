@@ -1,0 +1,11 @@
+[Unit]
+Description=Cubic Remote Command Execution Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/cubic-rce-bot -confPath /etc/cubic-rce-bot/%i.json -zapConf systemd
+ExecReload=/usr/bin/kill -USR1 $MAINPID
+
+[Install]
+WantedBy=multi-user.target
