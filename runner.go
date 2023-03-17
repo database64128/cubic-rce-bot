@@ -1,6 +1,7 @@
 package rcebot
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
@@ -40,14 +41,9 @@ func (r *Runner) loadConfig() error {
 		return err
 	}
 
-	userCommandsByID, err := config.UserCommandsByID()
-	if err != nil {
-		return err
-	}
-
 	r.Config = config
 	r.cachedConfigContent = content
-	r.Handler.ReplaceUserCommandsByID(userCommandsByID)
+	r.Handler.ReplaceUserCommandsByID(config.UserCommandsByID())
 	return nil
 }
 
@@ -64,6 +60,12 @@ func NewRunner(configPath string, logger *zap.Logger) (*Runner, error) {
 }
 
 // Start starts the runner.
-func (r *Runner) Start() {
+func (r *Runner) Start(ctx context.Context) {
+	r.Handler.SetContext(ctx)
 	r.registerSIGUSR1()
+}
+
+// Wait waits for the runner to finish.
+func (r *Runner) Wait() {
+	r.Handler.Wait()
 }

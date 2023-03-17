@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -112,17 +113,23 @@ func main() {
 	}
 
 	b.Handle("/start", rcebot.HandleStart, logHandleCommandFunc)
-	b.Handle("/list", r.Handler.HandleList, logHandleCommandFunc)
-	b.Handle("/exec", r.Handler.HandleExec, logHandleCommandFunc)
+	b.Handle("/list", r.Handler.HandleList, logHandleCommandFunc, r.Handler.SetUserCommands)
+	b.Handle("/exec", r.Handler.HandleExec, logHandleCommandFunc, r.Handler.SetUserCommands, r.Handler.SetCommand)
+	b.Handle("/cancel", r.Handler.HandleCancel, logHandleCommandFunc, r.Handler.SetUserCommands, r.Handler.SetCommand)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	ctx, cancel := context.WithCancel(context.Background())
+
 	go func() {
 		sig := <-sigCh
 		logger.Info("Received signal, stopping...", zap.Stringer("signal", sig))
 		b.Stop()
+		cancel()
 	}()
 
-	r.Start()
+	r.Start(ctx)
 	b.Start()
+
+	r.Wait()
 }

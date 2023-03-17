@@ -1,9 +1,18 @@
 package rcebot
 
 import (
-	"fmt"
-	"os/exec"
-	"path/filepath"
+	"bytes"
+	"context"
+	"sync/atomic"
+	"time"
+)
+
+const (
+	// DefaultExecTimeout is the default command execution timeout.
+	DefaultExecTimeout = 15 * time.Second
+
+	// DefaultExitTimeout is the default command exit timeout.
+	DefaultExitTimeout = 5 * time.Second
 )
 
 // Config is the configuration for the bot.
@@ -25,41 +34,63 @@ type User struct {
 	ID int64 `json:"id"`
 
 	// Commands is the list of commands the user is allowed to execute.
-	Commands [][]string `json:"commands"`
+	Commands []Command `json:"commands"`
+}
+
+// Command is an authorized command.
+type Command struct {
+	// Name is the command name.
+	Name string `json:"name"`
+
+	// Args is the list of command arguments.
+	Args []string `json:"args"`
+
+	// ExecTimeoutSec is the command execution timeout in seconds.
+	// When command execution exceeds this timeout, an interrupt signal is sent to the process.
+	// If the process does not exit within [ExitTimeoutSec], it is terminated.
+	//
+	// If zero, [DefaultExecTimeout] is used.
+	ExecTimeoutSec int `json:"execTimeoutSec"`
+
+	// ExitTimeoutSec is the command exit timeout in seconds.
+	// When command execution exceeds [ExecTimeoutSec], an interrupt signal is sent to the process.
+	// If the process does not exit within this timeout, it is terminated.
+	//
+	// If zero, [DefaultExitTimeout] is used.
+	ExitTimeoutSec int `json:"exitTimeoutSec"`
+
+	execTimeout     time.Duration
+	exitTimeout     time.Duration
+	cancel          atomic.Pointer[context.CancelFunc]
+	outputBuffer    bytes.Buffer
+	responseBuilder CommandOutputResponseBuilder
 }
 
 // UserCommandsByID returns a map of user ID to list of commands.
-func (c Config) UserCommandsByID() (map[int64][]exec.Cmd, error) {
-	m := make(map[int64][]exec.Cmd, len(c.Users))
+func (c Config) UserCommandsByID() map[int64][]Command {
+	userCommandsByID := make(map[int64][]Command, len(c.Users))
 
 	for _, user := range c.Users {
-		cmds := make([]exec.Cmd, len(user.Commands))
+		for i := range user.Commands {
+			command := &user.Commands[i]
 
-		for i, args := range user.Commands {
-			if len(args) == 0 {
-				return nil, fmt.Errorf("empty command for user %d", user.ID)
+			switch command.ExecTimeoutSec {
+			case 0:
+				command.execTimeout = DefaultExecTimeout
+			default:
+				command.execTimeout = time.Duration(command.ExecTimeoutSec) * time.Second
 			}
 
-			cmd := &cmds[i]
-			cmd.Path = args[0]
-			cmd.Args = args
-
-			if filepath.Base(cmd.Path) == cmd.Path {
-				lp, err := exec.LookPath(cmd.Path)
-				if lp != "" {
-					// Update cmd.Path even if err is non-nil.
-					// If err is ErrDot (especially on Windows), lp may include a resolved
-					// extension (like .exe or .bat) that should be preserved.
-					cmd.Path = lp
-				}
-				if err != nil {
-					cmd.Err = err
-				}
+			switch command.ExitTimeoutSec {
+			case 0:
+				command.exitTimeout = DefaultExitTimeout
+			default:
+				command.exitTimeout = time.Duration(command.ExitTimeoutSec) * time.Second
 			}
 		}
 
-		m[user.ID] = cmds
+		userCommandsByID[user.ID] = user.Commands
 	}
 
-	return m, nil
+	return userCommandsByID
 }

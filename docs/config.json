@@ -5,13 +5,17 @@
         {
             "id": 123456789,
             "commands": [
-                [
-                    "date"
-                ],
-                [
-                    "date",
-                    "-Iseconds"
-                ]
+                {
+                    "name": "date"
+                },
+                {
+                    "name": "date",
+                    "args": [
+                        "-Iseconds"
+                    ],
+                    "execTimeoutSec": 15,
+                    "exitTimeoutSec": 5
+                }
             ]
         }
     ]
