@@ -61,6 +61,19 @@ func NewRunner(configPath string, logger *zap.Logger) (*Runner, error) {
 	return &r, nil
 }
 
+func (r *Runner) onErr(err error, c tele.Context) {
+	if ce := r.logger.Check(zap.WarnLevel, "Failed to handle command"); ce != nil {
+		sender := c.Sender()
+		ce.Write(
+			zap.Int64("userID", sender.ID),
+			zap.String("userFirstName", sender.FirstName),
+			zap.String("username", sender.Username),
+			zap.String("text", c.Text()),
+			zap.Error(err),
+		)
+	}
+}
+
 func (r *Runner) logHandleCommand(next tele.HandlerFunc) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		if ce := r.logger.Check(zap.InfoLevel, "Handling command"); ce != nil {
@@ -79,8 +92,9 @@ func (r *Runner) logHandleCommand(next tele.HandlerFunc) tele.HandlerFunc {
 // Start starts the runner.
 func (r *Runner) Start(ctx context.Context) error {
 	b, err := tele.NewBot(tele.Settings{
-		URL:   r.Config.URL,
-		Token: r.Config.Token,
+		URL:     r.Config.URL,
+		Token:   r.Config.Token,
+		OnError: r.onErr,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create bot: %w", err)
