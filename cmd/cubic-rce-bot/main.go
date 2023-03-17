@@ -13,7 +13,6 @@ import (
 	"github.com/database64128/cubic-rce-bot/logging"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	tele "gopkg.in/telebot.v3"
 )
 
 var (
@@ -79,57 +78,17 @@ func main() {
 		return
 	}
 
-	b, err := tele.NewBot(tele.Settings{
-		URL:   r.Config.URL,
-		Token: r.Config.Token,
-	})
-	if err != nil {
-		logger.Fatal("Failed to create bot", zap.Error(err))
+	ctx, cancel := context.WithCancel(context.Background())
+
+	if err = r.Start(ctx); err != nil {
+		logger.Fatal("Failed to start bot runner", zap.Error(err))
 	}
-
-	if err = b.SetCommands(rcebot.Commands); err != nil {
-		logger.Fatal("Failed to register bot commands", zap.Error(err))
-	}
-
-	logger.Info("Started bot",
-		zap.Int64("userID", b.Me.ID),
-		zap.String("userFirstName", b.Me.FirstName),
-		zap.String("username", b.Me.Username),
-	)
-
-	logHandleCommandFunc := func(next tele.HandlerFunc) tele.HandlerFunc {
-		return func(c tele.Context) error {
-			if ce := logger.Check(zap.InfoLevel, "Handling command"); ce != nil {
-				sender := c.Sender()
-				ce.Write(
-					zap.Int64("userID", sender.ID),
-					zap.String("userFirstName", sender.FirstName),
-					zap.String("username", sender.Username),
-					zap.String("text", c.Text()),
-				)
-			}
-			return next(c)
-		}
-	}
-
-	b.Handle("/start", rcebot.HandleStart, logHandleCommandFunc)
-	b.Handle("/list", r.Handler.HandleList, logHandleCommandFunc, r.Handler.SetUserCommands)
-	b.Handle("/exec", r.Handler.HandleExec, logHandleCommandFunc, r.Handler.SetUserCommands, r.Handler.SetCommand)
-	b.Handle("/cancel", r.Handler.HandleCancel, logHandleCommandFunc, r.Handler.SetUserCommands, r.Handler.SetCommand)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	ctx, cancel := context.WithCancel(context.Background())
+	sig := <-sigCh
+	logger.Info("Received exit signal", zap.Stringer("signal", sig))
 
-	go func() {
-		sig := <-sigCh
-		logger.Info("Received signal, stopping...", zap.Stringer("signal", sig))
-		b.Stop()
-		cancel()
-	}()
-
-	r.Start(ctx)
-	b.Start()
-
+	cancel()
 	r.Wait()
 }

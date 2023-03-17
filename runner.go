@@ -3,10 +3,12 @@ package rcebot
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/database64128/cubic-rce-bot/mmap"
 	"go.uber.org/zap"
+	tele "gopkg.in/telebot.v3"
 )
 
 // Runner loads the configuration and creates a handler.
@@ -59,10 +61,56 @@ func NewRunner(configPath string, logger *zap.Logger) (*Runner, error) {
 	return &r, nil
 }
 
+func (r *Runner) logHandleCommand(next tele.HandlerFunc) tele.HandlerFunc {
+	return func(c tele.Context) error {
+		if ce := r.logger.Check(zap.InfoLevel, "Handling command"); ce != nil {
+			sender := c.Sender()
+			ce.Write(
+				zap.Int64("userID", sender.ID),
+				zap.String("userFirstName", sender.FirstName),
+				zap.String("username", sender.Username),
+				zap.String("text", c.Text()),
+			)
+		}
+		return next(c)
+	}
+}
+
 // Start starts the runner.
-func (r *Runner) Start(ctx context.Context) {
+func (r *Runner) Start(ctx context.Context) error {
+	b, err := tele.NewBot(tele.Settings{
+		URL:   r.Config.URL,
+		Token: r.Config.Token,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create bot: %w", err)
+	}
+
+	if err = b.SetCommands(Commands); err != nil {
+		return fmt.Errorf("failed to register bot commands: %w", err)
+	}
+
+	b.Handle("/start", HandleStart, r.logHandleCommand)
+	b.Handle("/list", r.Handler.HandleList, r.logHandleCommand, r.Handler.SetUserCommands)
+	b.Handle("/exec", r.Handler.HandleExec, r.logHandleCommand, r.Handler.SetUserCommands, r.Handler.SetCommand)
+	b.Handle("/cancel", r.Handler.HandleCancel, r.logHandleCommand, r.Handler.SetUserCommands, r.Handler.SetCommand)
+
 	r.Handler.SetContext(ctx)
 	r.registerSIGUSR1()
+
+	go b.Start()
+
+	go func() {
+		<-ctx.Done()
+		b.Stop()
+	}()
+
+	r.logger.Info("Started bot",
+		zap.Int64("userID", b.Me.ID),
+		zap.String("userFirstName", b.Me.FirstName),
+		zap.String("username", b.Me.Username),
+	)
+	return nil
 }
 
 // Wait waits for the runner to finish.
