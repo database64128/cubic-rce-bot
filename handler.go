@@ -116,7 +116,9 @@ func writeQuotedArg(sb *strings.Builder, arg string) {
 // It short-circuits the command handler if the index is invalid.
 func (h *Handler) SetCommand(next tele.HandlerFunc) tele.HandlerFunc {
 	return func(c tele.Context) error {
-		index, err := strconv.Atoi(c.Message().Payload)
+		arg := strings.TrimSpace(c.Message().Payload)
+
+		index, err := strconv.Atoi(arg)
 		if err != nil || index < 0 {
 			return c.Reply("Invalid index.")
 		}
