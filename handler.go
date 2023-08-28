@@ -87,7 +87,9 @@ func userCommands(c tele.Context) []Command {
 // HandleList handles the `/list` command.
 func (h *Handler) HandleList(c tele.Context) error {
 	var sb strings.Builder
-	for i, command := range userCommands(c) {
+	commands := userCommands(c)
+	for i := range commands {
+		command := &commands[i]
 		sb.WriteString("\\[")
 		sb.WriteString(strconv.Itoa(i))
 		sb.WriteString("\\] `")
