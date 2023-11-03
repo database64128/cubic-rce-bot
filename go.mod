@@ -4,7 +4,7 @@ go 1.21.0
 
 require (
 	go.uber.org/zap v1.26.0
-	gopkg.in/telebot.v3 v3.1.3
+	gopkg.in/telebot.v3 v3.1.4
 )
 
 require (
