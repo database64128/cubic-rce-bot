@@ -7,7 +7,4 @@ require (
 	gopkg.in/telebot.v3 v3.1.4
 )
 
-require (
-	go.uber.org/multierr v1.10.0 // indirect
-	golang.org/x/sys v0.14.0
-)
+require go.uber.org/multierr v1.10.0 // indirect

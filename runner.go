@@ -4,9 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
+	"os"
 
-	"github.com/database64128/cubic-rce-bot/mmap"
 	"go.uber.org/zap"
 	tele "gopkg.in/telebot.v3"
 )
@@ -25,26 +24,20 @@ type Runner struct {
 }
 
 func (r *Runner) loadConfig() error {
-	content, err := mmap.ReadFile[string](r.configPath)
+	f, err := os.Open(r.configPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open config file: %w", err)
 	}
-	defer mmap.Unmap(content)
-
-	if content == r.cachedConfigContent {
-		return nil
-	}
+	defer f.Close()
 
 	var config Config
-	sr := strings.NewReader(content)
-	d := json.NewDecoder(sr)
+	d := json.NewDecoder(f)
 	d.DisallowUnknownFields()
 	if err = d.Decode(&config); err != nil {
-		return err
+		return fmt.Errorf("failed to decode config file: %w", err)
 	}
 
 	r.Config = config
-	r.cachedConfigContent = content
 	r.Handler.ReplaceUserCommandsByID(config.UserCommandsByID())
 	return nil
 }
