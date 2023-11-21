@@ -12,20 +12,26 @@ import (
 	"github.com/database64128/cubic-rce-bot/jsonhelper"
 	"github.com/database64128/cubic-rce-bot/logging"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 var (
-	testConf = flag.Bool("testConf", false, "Test the configuration file without starting the services")
-	confPath = flag.String("confPath", "", "Path to JSON configuration file")
-	zapConf  = flag.String("zapConf", "", "Preset name or path to JSON configuration file for building the zap logger.\nAvailable presets: console (default), systemd, production, development")
-	logLevel = flag.String("logLevel", "", "Override the logger configuration's log level.\nAvailable levels: debug, info, warn, error, dpanic, panic, fatal")
+	testConf bool
+	confPath string
+	zapConf  string
+	logLevel zap.AtomicLevel
 )
+
+func init() {
+	flag.BoolVar(&testConf, "testConf", false, "Test the configuration file without starting the bot")
+	flag.StringVar(&confPath, "confPath", "", "Path to JSON configuration file")
+	flag.StringVar(&zapConf, "zapConf", "", "Preset name or path to JSON configuration file for building the zap logger.\nAvailable presets: console (default), systemd, production, development")
+	flag.TextVar(&logLevel, "logLevel", zap.AtomicLevel{}, "Override the logger configuration's log level.\nAvailable levels: debug, info, warn, error, dpanic, panic, fatal")
+}
 
 func main() {
 	flag.Parse()
 
-	if *confPath == "" {
+	if confPath == "" {
 		fmt.Println("Missing -confPath <path>.")
 		flag.Usage()
 		os.Exit(1)
@@ -33,7 +39,7 @@ func main() {
 
 	var zc zap.Config
 
-	switch *zapConf {
+	switch zapConf {
 	case "console", "":
 		zc = logging.NewProductionConsoleConfig(false)
 	case "systemd":
@@ -43,19 +49,14 @@ func main() {
 	case "development":
 		zc = zap.NewDevelopmentConfig()
 	default:
-		if err := jsonhelper.LoadAndDecodeDisallowUnknownFields(*zapConf, &zc); err != nil {
+		if err := jsonhelper.LoadAndDecodeDisallowUnknownFields(zapConf, &zc); err != nil {
 			fmt.Println(err)
 			os.Exit(1)
 		}
 	}
 
-	if *logLevel != "" {
-		l, err := zapcore.ParseLevel(*logLevel)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-		zc.Level.SetLevel(l)
+	if logLevel != (zap.AtomicLevel{}) {
+		zc.Level = logLevel
 	}
 
 	logger, err := zc.Build()
@@ -65,16 +66,16 @@ func main() {
 	}
 	defer logger.Sync()
 
-	r, err := rcebot.NewRunner(*confPath, logger)
+	r, err := rcebot.NewRunner(confPath, logger)
 	if err != nil {
 		logger.Fatal("Failed to create bot runner",
-			zap.Stringp("confPath", confPath),
+			zap.String("confPath", confPath),
 			zap.Error(err),
 		)
 	}
 
-	if *testConf {
-		logger.Info("Config test OK", zap.Stringp("confPath", confPath))
+	if testConf {
+		logger.Info("Config test OK", zap.String("confPath", confPath))
 		return
 	}
 
