@@ -12,20 +12,21 @@ import (
 	"github.com/database64128/cubic-rce-bot/jsonhelper"
 	"github.com/database64128/cubic-rce-bot/logging"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 var (
 	testConf bool
 	confPath string
 	zapConf  string
-	logLevel zap.AtomicLevel
+	logLevel zapcore.Level
 )
 
 func init() {
 	flag.BoolVar(&testConf, "testConf", false, "Test the configuration file without starting the bot")
 	flag.StringVar(&confPath, "confPath", "", "Path to JSON configuration file")
 	flag.StringVar(&zapConf, "zapConf", "", "Preset name or path to JSON configuration file for building the zap logger.\nAvailable presets: console (default), systemd, production, development")
-	flag.TextVar(&logLevel, "logLevel", zap.AtomicLevel{}, "Override the logger configuration's log level.\nAvailable levels: debug, info, warn, error, dpanic, panic, fatal")
+	flag.TextVar(&logLevel, "logLevel", zapcore.InvalidLevel, "Override the logger configuration's log level.\nAvailable levels: debug, info, warn, error, dpanic, panic, fatal")
 }
 
 func main() {
@@ -55,8 +56,8 @@ func main() {
 		}
 	}
 
-	if logLevel != (zap.AtomicLevel{}) {
-		zc.Level = logLevel
+	if logLevel != zapcore.InvalidLevel {
+		zc.Level.SetLevel(logLevel)
 	}
 
 	logger, err := zc.Build()
