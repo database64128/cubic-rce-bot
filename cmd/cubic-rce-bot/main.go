@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	rcebot "github.com/database64128/cubic-rce-bot"
 	"github.com/database64128/cubic-rce-bot/jsonhelper"
@@ -33,7 +34,7 @@ func main() {
 	flag.Parse()
 
 	if confPath == "" {
-		fmt.Println("Missing -confPath <path>.")
+		fmt.Fprintln(os.Stderr, "Missing -confPath <path>.")
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -51,7 +52,7 @@ func main() {
 		zc = zap.NewDevelopmentConfig()
 	default:
 		if err := jsonhelper.LoadAndDecodeDisallowUnknownFields(zapConf, &zc); err != nil {
-			fmt.Println(err)
+			fmt.Fprintln(os.Stderr, "Failed to load zap logger config:", err)
 			os.Exit(1)
 		}
 	}
@@ -62,7 +63,7 @@ func main() {
 
 	logger, err := zc.Build()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, "Failed to build logger:", err)
 		os.Exit(1)
 	}
 	defer logger.Sync()
@@ -82,8 +83,13 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	if err = r.Start(ctx); err != nil {
-		logger.Fatal("Failed to start bot runner", zap.Error(err))
+	for {
+		if err = r.Start(ctx); err != nil {
+			logger.Warn("Failed to start bot runner, retrying in 30 seconds", zap.Error(err))
+			time.Sleep(30 * time.Second)
+			continue
+		}
+		break
 	}
 
 	sigCh := make(chan os.Signal, 1)
