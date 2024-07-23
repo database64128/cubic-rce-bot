@@ -10,7 +10,6 @@ import (
 	"time"
 
 	rcebot "github.com/database64128/cubic-rce-bot"
-	"github.com/database64128/cubic-rce-bot/jsonhelper"
 	"github.com/database64128/cubic-rce-bot/logging"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -24,44 +23,16 @@ var (
 )
 
 func init() {
-	flag.BoolVar(&testConf, "testConf", false, "Test the configuration file without starting the bot")
-	flag.StringVar(&confPath, "confPath", "", "Path to JSON configuration file")
-	flag.StringVar(&zapConf, "zapConf", "", "Preset name or path to JSON configuration file for building the zap logger.\nAvailable presets: console (default), systemd, production, development")
-	flag.TextVar(&logLevel, "logLevel", zapcore.InvalidLevel, "Override the logger configuration's log level.\nAvailable levels: debug, info, warn, error, dpanic, panic, fatal")
+	flag.BoolVar(&testConf, "testConf", false, "Test the configuration file and exit without starting the services")
+	flag.StringVar(&confPath, "confPath", "config.json", "Path to the JSON configuration file")
+	flag.StringVar(&zapConf, "zapConf", "console", "Preset name or path to the JSON configuration file for building the zap logger.\nAvailable presets: console, console-nocolor, console-notime, systemd, production, development")
+	flag.TextVar(&logLevel, "logLevel", zapcore.InfoLevel, "Log level for the console and systemd presets.\nAvailable levels: debug, info, warn, error, dpanic, panic, fatal")
 }
 
 func main() {
 	flag.Parse()
 
-	if confPath == "" {
-		fmt.Fprintln(os.Stderr, "Missing -confPath <path>.")
-		flag.Usage()
-		os.Exit(1)
-	}
-
-	var zc zap.Config
-
-	switch zapConf {
-	case "console", "":
-		zc = logging.NewProductionConsoleConfig(false)
-	case "systemd":
-		zc = logging.NewProductionConsoleConfig(true)
-	case "production":
-		zc = zap.NewProductionConfig()
-	case "development":
-		zc = zap.NewDevelopmentConfig()
-	default:
-		if err := jsonhelper.LoadAndDecodeDisallowUnknownFields(zapConf, &zc); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to load zap logger config:", err)
-			os.Exit(1)
-		}
-	}
-
-	if logLevel != zapcore.InvalidLevel {
-		zc.Level.SetLevel(logLevel)
-	}
-
-	logger, err := zc.Build()
+	logger, err := logging.NewZapLogger(zapConf, logLevel)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to build logger:", err)
 		os.Exit(1)

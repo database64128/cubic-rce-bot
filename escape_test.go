@@ -22,7 +22,7 @@ const (
 	responseEscapeErr = responseEscape + "1 \\+ 1 \\= 2"
 )
 
-var testErr = errors.New(errString)
+var errTest = errors.New(errString)
 
 func testCommandOutputResponseBuilder(t *testing.T, rb *CommandOutputResponseBuilder, output []byte, err error, expectedResponse string) {
 	t.Helper()
@@ -47,6 +47,6 @@ func TestCommandOutputResponseBuilder(t *testing.T) {
 		testCommandOutputResponseBuilder(t, &rb, []byte(outputMultiLine), nil, responseMultiLine)
 	})
 	t.Run("EscapeErr", func(t *testing.T) {
-		testCommandOutputResponseBuilder(t, &rb, []byte(outputEscape), testErr, responseEscapeErr)
+		testCommandOutputResponseBuilder(t, &rb, []byte(outputEscape), errTest, responseEscapeErr)
 	})
 }

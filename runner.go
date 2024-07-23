@@ -2,10 +2,9 @@ package rcebot
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 
+	"github.com/database64128/cubic-rce-bot/jsonhelper"
 	"go.uber.org/zap"
 	tele "gopkg.in/telebot.v3"
 )
@@ -18,23 +17,14 @@ type Runner struct {
 	// Handler is the bot handler.
 	Handler Handler
 
-	configPath          string
-	cachedConfigContent string
-	logger              *zap.Logger
+	configPath string
+	logger     *zap.Logger
 }
 
 func (r *Runner) loadConfig() error {
-	f, err := os.Open(r.configPath)
-	if err != nil {
-		return fmt.Errorf("failed to open config file: %w", err)
-	}
-	defer f.Close()
-
 	var config Config
-	d := json.NewDecoder(f)
-	d.DisallowUnknownFields()
-	if err = d.Decode(&config); err != nil {
-		return fmt.Errorf("failed to decode config file: %w", err)
+	if err := jsonhelper.OpenAndDecodeDisallowUnknownFields(r.configPath, &config); err != nil {
+		return err
 	}
 
 	r.Config = config
@@ -49,7 +39,7 @@ func NewRunner(configPath string, logger *zap.Logger) (*Runner, error) {
 		logger:     logger,
 	}
 	if err := r.loadConfig(); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 	return &r, nil
 }
