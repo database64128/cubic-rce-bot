@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/database64128/cubic-rce-bot/jsonhelper"
+	"github.com/database64128/cubic-rce-bot/jsoncfg"
 	"go.uber.org/zap"
 	tele "gopkg.in/telebot.v3"
 )
@@ -23,13 +23,18 @@ type Runner struct {
 
 func (r *Runner) loadConfig() error {
 	var config Config
-	if err := jsonhelper.OpenAndDecodeDisallowUnknownFields(r.configPath, &config); err != nil {
+	if err := jsoncfg.Open(r.configPath, &config); err != nil {
 		return err
 	}
 
 	r.Config = config
 	r.Handler.ReplaceUserCommandsByID(config.UserCommandsByID())
 	return nil
+}
+
+// SaveConfig saves the current configuration to the file.
+func (r *Runner) SaveConfig() error {
+	return jsoncfg.Save(r.configPath, r.Config)
 }
 
 // NewRunner creates a new runner.

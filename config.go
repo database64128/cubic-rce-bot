@@ -22,7 +22,7 @@ type Config struct {
 
 	// URL is the custom bot API URL.
 	// Leave empty to use the official bot API.
-	URL string `json:"url"`
+	URL string `json:"url,omitzero"`
 
 	// Users is the list of authorized users.
 	Users []User `json:"users"`
@@ -43,21 +43,21 @@ type Command struct {
 	Name string `json:"name"`
 
 	// Args is the list of command arguments.
-	Args []string `json:"args"`
+	Args []string `json:"args,omitzero"`
 
 	// ExecTimeoutSec is the command execution timeout in seconds.
 	// When command execution exceeds this timeout, an interrupt signal is sent to the process.
 	// If the process does not exit within [ExitTimeoutSec], it is terminated.
 	//
 	// If zero, [DefaultExecTimeout] is used.
-	ExecTimeoutSec int `json:"execTimeoutSec"`
+	ExecTimeoutSec int `json:"execTimeoutSec,omitzero"`
 
 	// ExitTimeoutSec is the command exit timeout in seconds.
 	// When command execution exceeds [ExecTimeoutSec], an interrupt signal is sent to the process.
 	// If the process does not exit within this timeout, it is terminated.
 	//
 	// If zero, [DefaultExitTimeout] is used.
-	ExitTimeoutSec int `json:"exitTimeoutSec"`
+	ExitTimeoutSec int `json:"exitTimeoutSec,omitzero"`
 
 	execTimeout     time.Duration
 	exitTimeout     time.Duration
