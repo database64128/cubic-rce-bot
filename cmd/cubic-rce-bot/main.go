@@ -8,7 +8,6 @@ import (
 	"os/signal"
 	"runtime/debug"
 	"syscall"
-	"time"
 
 	rcebot "github.com/database64128/cubic-rce-bot"
 	"github.com/database64128/cubic-rce-bot/logging"
@@ -76,13 +75,8 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	for {
-		if err = r.Start(ctx); err != nil {
-			logger.Warn("Failed to start bot runner, retrying in 30 seconds", zap.Error(err))
-			time.Sleep(30 * time.Second)
-			continue
-		}
-		break
+	if err = r.Start(ctx); err != nil {
+		logger.Fatal("Failed to start bot runner", zap.Error(err))
 	}
 
 	sigCh := make(chan os.Signal, 1)
@@ -92,5 +86,5 @@ func main() {
 	signal.Stop(sigCh)
 
 	cancel()
-	r.Wait()
+	r.Stop()
 }

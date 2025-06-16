@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/database64128/cubic-rce-bot/jsoncfg"
+	"github.com/database64128/cubic-rce-bot/webhook"
 )
 
 const (
@@ -25,6 +26,9 @@ type Config struct {
 	// URL is the custom bot API URL.
 	// Leave empty to use the official bot API.
 	URL string `json:"url,omitzero"`
+
+	// Webhook is the webhook server configuration.
+	Webhook webhook.Config `json:"webhook,omitzero"`
 
 	// Users is the list of authorized users.
 	Users []User `json:"users"`

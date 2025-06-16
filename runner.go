@@ -3,8 +3,10 @@ package rcebot
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/database64128/cubic-rce-bot/jsoncfg"
+	"github.com/database64128/cubic-rce-bot/webhook"
 	"go.uber.org/zap"
 	tele "gopkg.in/telebot.v3"
 )
@@ -17,8 +19,10 @@ type Runner struct {
 	// Handler is the bot handler.
 	Handler Handler
 
-	configPath string
-	logger     *zap.Logger
+	configPath    string
+	logger        *zap.Logger
+	webhookServer *webhook.Server
+	bot           *tele.Bot
 }
 
 func (r *Runner) loadConfig() error {
@@ -79,17 +83,62 @@ func (r *Runner) logHandleCommand(next tele.HandlerFunc) tele.HandlerFunc {
 
 // Start starts the runner.
 func (r *Runner) Start(ctx context.Context) error {
-	b, err := tele.NewBot(tele.Settings{
+	var w *tele.Webhook
+	s := tele.Settings{
 		URL:     r.Config.URL,
 		Token:   r.Config.Token,
 		OnError: r.onErr,
-	})
-	if err != nil {
+	}
+
+	if r.Config.Webhook.Enabled {
+		w = &tele.Webhook{
+			SecretToken: r.Config.Webhook.SecretToken,
+			Endpoint: &tele.WebhookEndpoint{
+				PublicURL: r.Config.Webhook.URL,
+			},
+		}
+		s.Poller = w
+	}
+
+	retryOnError := func(f func() error) error {
+		for {
+			if err := f(); err != nil {
+				r.logger.Warn("Failed to complete API request, retrying in 30 seconds", zap.Error(err))
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(30 * time.Second):
+					continue
+				}
+			}
+			break
+		}
+		return nil
+	}
+
+	var b *tele.Bot
+
+	if err := retryOnError(func() (err error) {
+		b, err = tele.NewBot(s)
+		return err
+	}); err != nil {
 		return fmt.Errorf("failed to create bot: %w", err)
 	}
 
-	if err = b.SetCommands(Commands); err != nil {
-		return fmt.Errorf("failed to register bot commands: %w", err)
+	r.bot = b
+
+	if err := retryOnError(func() error {
+		return b.SetCommands(Commands)
+	}); err != nil {
+		return fmt.Errorf("failed to set bot commands: %w", err)
+	}
+
+	if !r.Config.Webhook.Enabled {
+		if err := retryOnError(func() error {
+			return b.RemoveWebhook()
+		}); err != nil {
+			return fmt.Errorf("failed to remove webhook: %w", err)
+		}
 	}
 
 	b.Handle("/start", HandleStart, r.logHandleCommand)
@@ -102,20 +151,38 @@ func (r *Runner) Start(ctx context.Context) error {
 
 	go b.Start()
 
-	go func() {
-		<-ctx.Done()
-		b.Stop()
-	}()
-
 	r.logger.Info("Started bot",
 		zap.Int64("userID", b.Me.ID),
 		zap.String("userFirstName", b.Me.FirstName),
 		zap.String("username", b.Me.Username),
 	)
+
+	if r.Config.Webhook.Enabled {
+		var err error
+		r.webhookServer, err = r.Config.Webhook.NewServer(r.logger, w)
+		if err != nil {
+			return fmt.Errorf("failed to create webhook server: %w", err)
+		}
+		if err = r.webhookServer.Start(ctx); err != nil {
+			return fmt.Errorf("failed to start webhook server: %w", err)
+		}
+	}
+
 	return nil
 }
 
-// Wait waits for the runner to finish.
-func (r *Runner) Wait() {
+// Stop stops the runner.
+func (r *Runner) Stop() {
+	// Stop the webhook server if it exists.
+	if r.webhookServer != nil {
+		if err := r.webhookServer.Stop(); err != nil {
+			r.logger.Error("Failed to stop webhook server", zap.Error(err))
+		}
+	}
+
+	// Stop the bot.
+	r.bot.Stop()
+
+	// Wait for all running commands to exit.
 	r.Handler.Wait()
 }
