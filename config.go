@@ -5,6 +5,8 @@ import (
 	"context"
 	"sync/atomic"
 	"time"
+
+	"github.com/database64128/cubic-rce-bot/jsoncfg"
 )
 
 const (
@@ -45,22 +47,20 @@ type Command struct {
 	// Args is the list of command arguments.
 	Args []string `json:"args,omitzero"`
 
-	// ExecTimeoutSec is the command execution timeout in seconds.
+	// ExecTimeout is the command execution timeout.
 	// When command execution exceeds this timeout, an interrupt signal is sent to the process.
 	// If the process does not exit within [ExitTimeoutSec], it is terminated.
 	//
 	// If zero, [DefaultExecTimeout] is used.
-	ExecTimeoutSec int `json:"execTimeoutSec,omitzero"`
+	ExecTimeout jsoncfg.Duration `json:"execTimeout,omitzero"`
 
-	// ExitTimeoutSec is the command exit timeout in seconds.
+	// ExitTimeout is the command exit timeout.
 	// When command execution exceeds [ExecTimeoutSec], an interrupt signal is sent to the process.
 	// If the process does not exit within this timeout, it is terminated.
 	//
 	// If zero, [DefaultExitTimeout] is used.
-	ExitTimeoutSec int `json:"exitTimeoutSec,omitzero"`
+	ExitTimeout jsoncfg.Duration `json:"exitTimeout,omitzero"`
 
-	execTimeout     time.Duration
-	exitTimeout     time.Duration
 	cancel          atomic.Pointer[context.CancelFunc]
 	outputBuffer    bytes.Buffer
 	responseBuilder CommandOutputResponseBuilder
@@ -74,18 +74,12 @@ func (c Config) UserCommandsByID() map[int64][]Command {
 		for i := range user.Commands {
 			command := &user.Commands[i]
 
-			switch command.ExecTimeoutSec {
-			case 0:
-				command.execTimeout = DefaultExecTimeout
-			default:
-				command.execTimeout = time.Duration(command.ExecTimeoutSec) * time.Second
+			if command.ExecTimeout == 0 {
+				command.ExecTimeout = jsoncfg.Duration(DefaultExecTimeout)
 			}
 
-			switch command.ExitTimeoutSec {
-			case 0:
-				command.exitTimeout = DefaultExitTimeout
-			default:
-				command.exitTimeout = time.Duration(command.ExitTimeoutSec) * time.Second
+			if command.ExitTimeout == 0 {
+				command.ExitTimeout = jsoncfg.Duration(DefaultExitTimeout)
 			}
 		}
 

@@ -13,8 +13,8 @@
                     "args": [
                         "-Iseconds"
                     ],
-                    "execTimeoutSec": 15,
-                    "exitTimeoutSec": 5
+                    "execTimeout": "15s",
+                    "exitTimeout": "5s"
                 }
             ]
         }

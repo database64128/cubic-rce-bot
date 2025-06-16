@@ -152,7 +152,7 @@ func (h *Handler) HandleExec(c tele.Context) error {
 	defer h.wg.Done()
 
 	command := command(c)
-	execCtx, cancel := context.WithTimeout(h.ctx, command.execTimeout)
+	execCtx, cancel := context.WithTimeout(h.ctx, command.ExecTimeout.Value())
 	defer cancel()
 
 	if !command.cancel.CompareAndSwap(nil, &cancel) {
@@ -167,7 +167,7 @@ func (h *Handler) HandleExec(c tele.Context) error {
 	cmd.Cancel = func() error {
 		return cmd.Process.Signal(os.Interrupt)
 	}
-	cmd.WaitDelay = command.execTimeout
+	cmd.WaitDelay = command.ExitTimeout.Value()
 
 	err := cmd.Run()
 	output := command.outputBuffer.Bytes()
@@ -186,5 +186,5 @@ func (h *Handler) HandleCancel(c tele.Context) error {
 		return c.Reply("The command is not running\\. Use `/exec "+strconv.Itoa(index)+"` to execute it\\.", tele.ModeMarkdownV2)
 	}
 	(*cancel)()
-	return c.Reply("The command has been canceled. You may need to wait up to " + command.exitTimeout.String() + " for it to be killed.")
+	return c.Reply("The command has been canceled. You may need to wait up to " + command.ExitTimeout.Value().String() + " for it to be killed.")
 }
