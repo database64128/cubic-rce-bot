@@ -11,9 +11,9 @@ import (
 )
 
 func (r *Runner) registerSIGUSR1() {
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGUSR1)
 	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGUSR1)
 		for range sigCh {
 			if err := r.loadConfig(); err != nil {
 				r.logger.Warn("Failed to reload config", zap.Error(err))

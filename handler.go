@@ -9,24 +9,26 @@ import (
 	"sync"
 	"sync/atomic"
 
-	tele "gopkg.in/telebot.v3"
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
+	"go.uber.org/zap"
 )
 
-var Commands = []tele.Command{
+var Commands = []models.BotCommand{
 	{
-		Text:        "start",
+		Command:     "start",
 		Description: "Get started with the bot",
 	},
 	{
-		Text:        "list",
+		Command:     "list",
 		Description: "List commands authorized for you to request execution",
 	},
 	{
-		Text:        "exec",
+		Command:     "exec",
 		Description: "Execute an authorized command at the specified index",
 	},
 	{
-		Text:        "cancel",
+		Command:     "cancel",
 		Description: "Cancel a running command at the specified index",
 	},
 }
@@ -38,16 +40,41 @@ You can only execute commands authorized for your account in the configuration\.
 \- To execute a command, use ` + "`/exec <index>`" + `\.
 `
 
-// HandleStart handles the `/start` command.
-func HandleStart(c tele.Context) error {
-	return c.Reply(startTextMarkdownV2, tele.ModeMarkdownV2)
+// handleStart handles the `/start` command.
+func handleStart(ctx context.Context, b *bot.Bot, message *models.Message) error {
+	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:          message.Chat.ID,
+		MessageThreadID: message.MessageThreadID,
+		Text:            startTextMarkdownV2,
+		ParseMode:       models.ParseModeMarkdown,
+		ReplyParameters: &models.ReplyParameters{
+			MessageID: message.ID,
+		},
+	})
+	return err
 }
 
 // Handler handles bot commands.
 type Handler struct {
+	botUsername      string
+	logger           *zap.Logger
 	wg               sync.WaitGroup
-	ctx              context.Context
 	userCommandsByID atomic.Pointer[map[int64][]Command]
+	handleList       func(ctx context.Context, b *bot.Bot, message *models.Message, cmdArg string) error
+	handleExec       func(ctx context.Context, b *bot.Bot, message *models.Message, cmdArg string) error
+	handleCancel     func(ctx context.Context, b *bot.Bot, message *models.Message, cmdArg string) error
+}
+
+// NewHandler returns a new handler for bot commands.
+func NewHandler(botUsername string, logger *zap.Logger) *Handler {
+	h := Handler{
+		botUsername: botUsername,
+		logger:      logger,
+	}
+	h.handleList = requireUserCommands(&h.userCommandsByID, handleList)
+	h.handleExec = requireUserCommands(&h.userCommandsByID, requireCommandIndex(newExecHandler(&h.wg)))
+	h.handleCancel = requireUserCommands(&h.userCommandsByID, requireCommandIndex(handleCancel))
+	return &h
 }
 
 // Wait waits for all running commands to finish.
@@ -55,9 +82,9 @@ func (h *Handler) Wait() {
 	h.wg.Wait()
 }
 
-// SetContext sets the context.
-func (h *Handler) SetContext(ctx context.Context) {
-	h.ctx = ctx
+// SetBotUsername sets the bot username.
+func (h *Handler) SetBotUsername(username string) {
+	h.botUsername = username
 }
 
 // ReplaceUserCommandsByID replaces the user commands map.
@@ -65,29 +92,94 @@ func (h *Handler) ReplaceUserCommandsByID(m map[int64][]Command) {
 	h.userCommandsByID.Store(&m)
 }
 
-// SetUserCommands is a middleware that adds the user's list of authorized commands to the context.
-// It short-circuits the command handler if the user is not authorized to execute any commands.
-func (h *Handler) SetUserCommands(next tele.HandlerFunc) tele.HandlerFunc {
-	return func(c tele.Context) error {
-		userCommandsByID := *h.userCommandsByID.Load()
-		commands := userCommandsByID[c.Sender().ID]
+// Handle processes a bot command update.
+func (h *Handler) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
+	if update.Message == nil || update.Message.From == nil {
+		return
+	}
+
+	message := update.Message
+	botCmd := ParseBotCommand(message.Text)
+
+	// Ignore commands meant for other bots.
+	if botCmd.Username != "" && botCmd.Username != h.botUsername {
+		return
+	}
+
+	if ce := h.logger.Check(zap.DebugLevel, "Handling bot command"); ce != nil {
+		ce.Write(
+			zap.Int("id", message.ID),
+			zap.Int64("fromID", message.From.ID),
+			zap.String("fromFirstName", message.From.FirstName),
+			zap.String("fromUsername", message.From.Username),
+			zap.Int64("chatID", message.Chat.ID),
+			zap.String("text", message.Text),
+		)
+	}
+
+	var err error
+	switch botCmd.Name {
+	case "start":
+		err = handleStart(ctx, b, message)
+	case "list":
+		err = h.handleList(ctx, b, message, botCmd.Argument)
+	case "exec":
+		err = h.handleExec(ctx, b, message, botCmd.Argument)
+	case "cancel":
+		err = h.handleCancel(ctx, b, message, botCmd.Argument)
+	default:
+		return
+	}
+	if err != nil {
+		h.logger.Warn("Failed to handle bot command",
+			zap.Int("id", message.ID),
+			zap.Int64("fromID", message.From.ID),
+			zap.String("fromFirstName", message.From.FirstName),
+			zap.String("fromUsername", message.From.Username),
+			zap.Int64("chatID", message.Chat.ID),
+			zap.String("text", message.Text),
+			zap.Error(err),
+		)
+		return
+	}
+
+	h.logger.Info("Handled bot command",
+		zap.Int("id", message.ID),
+		zap.Int64("fromID", message.From.ID),
+		zap.String("fromFirstName", message.From.FirstName),
+		zap.String("fromUsername", message.From.Username),
+		zap.Int64("chatID", message.Chat.ID),
+		zap.String("text", message.Text),
+	)
+}
+
+// requireUserCommands is a middleware that adds the user's list of authorized commands to the arguments passed to
+// the next handler. It short-circuits the command handler if the user is not authorized to execute any commands.
+func requireUserCommands(
+	userCommandsByID *atomic.Pointer[map[int64][]Command],
+	next func(ctx context.Context, b *bot.Bot, message *models.Message, cmdArg string, commands []Command) error,
+) func(ctx context.Context, b *bot.Bot, message *models.Message, cmdArg string) error {
+	return func(ctx context.Context, b *bot.Bot, message *models.Message, cmdArg string) error {
+		userCommandsByID := *userCommandsByID.Load()
+		commands := userCommandsByID[message.From.ID]
 		if len(commands) == 0 {
-			return c.Reply("You are not authorized to execute any commands.")
+			_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID:          message.Chat.ID,
+				MessageThreadID: message.MessageThreadID,
+				Text:            "You are not authorized to execute any commands.",
+				ReplyParameters: &models.ReplyParameters{
+					MessageID: message.ID,
+				},
+			})
+			return err
 		}
-		c.Set("commands", commands)
-		return next(c)
+		return next(ctx, b, message, cmdArg, commands)
 	}
 }
 
-// userCommands returns the user's list of authorized commands from the context.
-func userCommands(c tele.Context) []Command {
-	return c.Get("commands").([]Command)
-}
-
-// HandleList handles the `/list` command.
-func (h *Handler) HandleList(c tele.Context) error {
+// handleList handles the `/list` command.
+func handleList(ctx context.Context, b *bot.Bot, message *models.Message, _ string, commands []Command) error {
 	var sb strings.Builder
-	commands := userCommands(c)
 	for i := range commands {
 		command := &commands[i]
 		sb.WriteString("\\[")
@@ -100,7 +192,17 @@ func (h *Handler) HandleList(c tele.Context) error {
 		}
 		sb.WriteString("`\n")
 	}
-	return c.Reply(sb.String(), tele.ModeMarkdownV2)
+
+	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:          message.Chat.ID,
+		MessageThreadID: message.MessageThreadID,
+		Text:            sb.String(),
+		ParseMode:       models.ParseModeMarkdown,
+		ReplyParameters: &models.ReplyParameters{
+			MessageID: message.ID,
+		},
+	})
+	return err
 }
 
 func writeQuotedArg(sb *strings.Builder, arg string) {
@@ -114,77 +216,119 @@ func writeQuotedArg(sb *strings.Builder, arg string) {
 	}
 }
 
-// SetCommand is a middleware that parses the specified command index and adds the command and its index to the context.
-// It short-circuits the command handler if the index is invalid.
-func (h *Handler) SetCommand(next tele.HandlerFunc) tele.HandlerFunc {
-	return func(c tele.Context) error {
-		arg := strings.TrimSpace(c.Message().Payload)
-
-		index, err := strconv.Atoi(arg)
+// requireCommandIndex is a middleware that parses the bot command argument as a command index and adds it to
+// the arguments passed to the next handler. It short-circuits the command handler if the index is invalid.
+func requireCommandIndex(
+	next func(ctx context.Context, b *bot.Bot, message *models.Message, commands []Command, index int) error,
+) func(ctx context.Context, b *bot.Bot, message *models.Message, cmdArg string, commands []Command) error {
+	return func(ctx context.Context, b *bot.Bot, message *models.Message, cmdArg string, commands []Command) error {
+		index, err := strconv.Atoi(cmdArg)
 		if err != nil || index < 0 {
-			return c.Reply("Invalid index.")
+			_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID:          message.Chat.ID,
+				MessageThreadID: message.MessageThreadID,
+				Text:            "Invalid command index.",
+				ReplyParameters: &models.ReplyParameters{
+					MessageID: message.ID,
+				},
+			})
+			return err
 		}
 
-		commands := userCommands(c)
 		if index >= len(commands) {
-			return c.Reply("Index out of range\\. Use `/list` to see the list of commands\\.", tele.ModeMarkdownV2)
+			_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID:          message.Chat.ID,
+				MessageThreadID: message.MessageThreadID,
+				Text:            "Index out of range\\. Use `/list` to see the list of commands\\.",
+				ParseMode:       models.ParseModeMarkdown,
+				ReplyParameters: &models.ReplyParameters{
+					MessageID: message.ID,
+				},
+			})
+			return err
 		}
 
-		c.Set("index", index)
-		c.Set("command", &commands[index])
-		return next(c)
+		return next(ctx, b, message, commands, index)
 	}
 }
 
-// index returns the command index from the context.
-func index(c tele.Context) int {
-	return c.Get("index").(int)
-}
+// newExecHandler returns a new handler that handles the `/exec` command.
+func newExecHandler(
+	wg *sync.WaitGroup,
+) func(ctx context.Context, b *bot.Bot, message *models.Message, commands []Command, index int) error {
+	return func(ctx context.Context, b *bot.Bot, message *models.Message, commands []Command, index int) error {
+		wg.Add(1)
+		defer wg.Done()
 
-// command returns the command from the context.
-func command(c tele.Context) *Command {
-	return c.Get("command").(*Command)
-}
+		command := &commands[index]
+		execCtx, cancel := context.WithTimeout(ctx, command.ExecTimeout.Value())
+		defer cancel()
 
-// HandleExec handles the `/exec` command.
-func (h *Handler) HandleExec(c tele.Context) error {
-	h.wg.Add(1)
-	defer h.wg.Done()
+		if !command.cancel.CompareAndSwap(nil, &cancel) {
+			_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID:          message.Chat.ID,
+				MessageThreadID: message.MessageThreadID,
+				Text:            "The command is already running\\. Use `/cancel " + strconv.Itoa(index) + "` to cancel it\\.",
+				ParseMode:       models.ParseModeMarkdown,
+				ReplyParameters: &models.ReplyParameters{
+					MessageID: message.ID,
+				},
+			})
+			return err
+		}
+		defer command.cancel.Store(nil)
 
-	command := command(c)
-	execCtx, cancel := context.WithTimeout(h.ctx, command.ExecTimeout.Value())
-	defer cancel()
+		cmd := exec.CommandContext(execCtx, command.Name, command.Args...)
+		cmd.Stdout = &command.outputBuffer
+		cmd.Stderr = &command.outputBuffer
+		cmd.Cancel = func() error {
+			return cmd.Process.Signal(os.Interrupt)
+		}
+		cmd.WaitDelay = command.ExitTimeout.Value()
 
-	if !command.cancel.CompareAndSwap(nil, &cancel) {
-		index := index(c)
-		return c.Reply("The command is already running\\. Use `/cancel "+strconv.Itoa(index)+"` to cancel it\\.", tele.ModeMarkdownV2)
+		err := cmd.Run()
+		output := command.outputBuffer.Bytes()
+		command.outputBuffer.Reset()
+
+		resp := command.responseBuilder.Build(output, err)
+		_, err = b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:          message.Chat.ID,
+			MessageThreadID: message.MessageThreadID,
+			Text:            resp,
+			ParseMode:       models.ParseModeMarkdown,
+			ReplyParameters: &models.ReplyParameters{
+				MessageID: message.ID,
+			},
+		})
+		return err
 	}
-	defer command.cancel.Store(nil)
-
-	cmd := exec.CommandContext(execCtx, command.Name, command.Args...)
-	cmd.Stdout = &command.outputBuffer
-	cmd.Stderr = &command.outputBuffer
-	cmd.Cancel = func() error {
-		return cmd.Process.Signal(os.Interrupt)
-	}
-	cmd.WaitDelay = command.ExitTimeout.Value()
-
-	err := cmd.Run()
-	output := command.outputBuffer.Bytes()
-	command.outputBuffer.Reset()
-
-	resp := command.responseBuilder.Build(output, err)
-	return c.Reply(resp, tele.ModeMarkdownV2)
 }
 
-// HandleCancel handles the `/cancel` command.
-func (h *Handler) HandleCancel(c tele.Context) error {
-	command := command(c)
+// handleCancel handles the `/cancel` command.
+func handleCancel(ctx context.Context, b *bot.Bot, message *models.Message, commands []Command, index int) error {
+	command := &commands[index]
 	cancel := command.cancel.Load()
 	if cancel == nil {
-		index := index(c)
-		return c.Reply("The command is not running\\. Use `/exec "+strconv.Itoa(index)+"` to execute it\\.", tele.ModeMarkdownV2)
+		_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:          message.Chat.ID,
+			MessageThreadID: message.MessageThreadID,
+			Text:            "The command is not running\\. Use `/exec " + strconv.Itoa(index) + "` to execute it\\.",
+			ParseMode:       models.ParseModeMarkdown,
+			ReplyParameters: &models.ReplyParameters{
+				MessageID: message.ID,
+			},
+		})
+		return err
 	}
 	(*cancel)()
-	return c.Reply("The command has been canceled. You may need to wait up to " + command.ExitTimeout.Value().String() + " for it to be killed.")
+
+	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:          message.Chat.ID,
+		MessageThreadID: message.MessageThreadID,
+		Text:            "The command has been canceled. You may need to wait up to " + command.ExitTimeout.Value().String() + " for it to be killed.",
+		ReplyParameters: &models.ReplyParameters{
+			MessageID: message.ID,
+		},
+	})
+	return err
 }
