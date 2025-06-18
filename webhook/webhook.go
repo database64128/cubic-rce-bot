@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -11,7 +12,7 @@ import (
 	"strconv"
 
 	"github.com/database64128/cubic-rce-bot/jsoncfg"
-	"go.uber.org/zap"
+	"github.com/database64128/cubic-rce-bot/tslog"
 )
 
 // Config holds the configuration for the webhook server.
@@ -45,29 +46,24 @@ type Config struct {
 }
 
 // NewServer creates a new webhook server.
-func (c *Config) NewServer(logger *zap.Logger, handler http.Handler) (*Server, error) {
-	errorLog, err := zap.NewStdLogAt(logger, zap.ErrorLevel)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create error logger: %w", err)
-	}
-
+func (c *Config) NewServer(logger *tslog.Logger, handler http.Handler) *Server {
 	return &Server{
 		logger:  logger,
 		network: c.ListenNetwork,
 		server: http.Server{
 			Addr:     c.ListenAddress,
 			Handler:  handler,
-			ErrorLog: errorLog,
+			ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
 		},
 		owner: c.ListenOwner,
 		group: c.ListenGroup,
 		mode:  c.ListenMode.Value(),
-	}, nil
+	}
 }
 
 // Server represents a webhook server that listens for incoming HTTP requests.
 type Server struct {
-	logger  *zap.Logger
+	logger  *tslog.Logger
 	network string
 	server  http.Server
 	owner   jsoncfg.IntOrString
@@ -93,11 +89,11 @@ func (s *Server) Start(ctx context.Context) error {
 
 	go func() {
 		if err := s.server.Serve(ln); err != nil && err != http.ErrServerClosed {
-			s.logger.Error("Failed to serve webhook", zap.Error(err))
+			s.logger.Error("Failed to serve webhook", tslog.Err(err))
 		}
 	}()
 
-	s.logger.Info("Started webhook server", zap.Stringer("listenAddress", listenAddress))
+	s.logger.Info("Started webhook server", slog.Any("listenAddress", listenAddress))
 	return nil
 }
 

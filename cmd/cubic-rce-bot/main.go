@@ -3,34 +3,38 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"runtime/debug"
 	"syscall"
 
 	rcebot "github.com/database64128/cubic-rce-bot"
-	"github.com/database64128/cubic-rce-bot/logging"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+	"github.com/database64128/cubic-rce-bot/tslog"
 )
 
 var (
-	version  bool
-	fmtConf  bool
-	testConf bool
-	confPath string
-	zapConf  string
-	logLevel zapcore.Level
+	version    bool
+	fmtConf    bool
+	testConf   bool
+	logNoColor bool
+	logNoTime  bool
+	logKVPairs bool
+	logJSON    bool
+	logLevel   slog.Level
+	confPath   string
 )
 
 func init() {
 	flag.BoolVar(&version, "version", false, "Print version information and exit")
 	flag.BoolVar(&fmtConf, "fmtConf", false, "Format the configuration file")
 	flag.BoolVar(&testConf, "testConf", false, "Test the configuration file and exit")
-	flag.StringVar(&confPath, "confPath", "config.json", "Path to the JSON configuration file")
-	flag.StringVar(&zapConf, "zapConf", "console", "Preset name or path to the JSON configuration file for building the zap logger.\nAvailable presets: console, console-nocolor, console-notime, systemd, production, development")
-	flag.TextVar(&logLevel, "logLevel", zapcore.InfoLevel, "Log level for the console and systemd presets.\nAvailable levels: debug, info, warn, error, dpanic, panic, fatal")
+	flag.BoolVar(&logNoColor, "logNoColor", false, "Disable colors in log output")
+	flag.BoolVar(&logNoTime, "logNoTime", false, "Disable timestamps in log output")
+	flag.BoolVar(&logKVPairs, "logKVPairs", false, "Use key=value pairs in log output")
+	flag.BoolVar(&logJSON, "logJSON", false, "Use JSON in log output")
+	flag.TextVar(&logLevel, "logLevel", slog.LevelInfo, "Log level, one of: DEBUG, INFO, WARN, ERROR")
+	flag.StringVar(&confPath, "confPath", "config.json", "Path to the configuration file")
 }
 
 func main() {
@@ -43,48 +47,52 @@ func main() {
 		return
 	}
 
-	logger, err := logging.NewZapLogger(zapConf, logLevel)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to build logger:", err)
-		os.Exit(1)
+	logCfg := tslog.Config{
+		Level:          logLevel,
+		NoColor:        logNoColor,
+		NoTime:         logNoTime,
+		UseTextHandler: logKVPairs,
+		UseJSONHandler: logJSON,
 	}
-	defer logger.Sync()
+	logger := logCfg.NewLogger(os.Stderr)
 
 	r, err := rcebot.NewRunner(confPath, logger)
 	if err != nil {
-		logger.Fatal("Failed to create bot runner",
-			zap.String("confPath", confPath),
-			zap.Error(err),
+		logger.Error("Failed to create bot runner",
+			slog.String("confPath", confPath),
+			tslog.Err(err),
 		)
+		os.Exit(1)
 	}
 
 	if fmtConf {
 		if err = r.SaveConfig(); err != nil {
-			logger.Fatal("Failed to save config",
-				zap.String("confPath", confPath),
-				zap.Error(err),
+			logger.Error("Failed to save config",
+				slog.String("confPath", confPath),
+				tslog.Err(err),
 			)
+			os.Exit(1)
 		}
-		logger.Info("Formatted config file", zap.String("confPath", confPath))
+		logger.Info("Formatted config file", slog.String("confPath", confPath))
 	}
 
 	if testConf {
-		logger.Info("Config test OK", zap.String("confPath", confPath))
+		logger.Info("Config test OK", slog.String("confPath", confPath))
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-ctx.Done()
+		logger.Info("Received exit signal")
+		stop()
+	}()
 
 	if err = r.Start(ctx); err != nil {
-		logger.Fatal("Failed to start bot runner", zap.Error(err))
+		logger.Error("Failed to start bot runner", tslog.Err(err))
+		os.Exit(1)
 	}
 
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	sig := <-sigCh
-	logger.Info("Received exit signal", zap.Stringer("signal", sig))
-	signal.Stop(sigCh)
-
-	cancel()
+	<-ctx.Done()
 	r.Stop()
 }

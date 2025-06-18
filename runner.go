@@ -3,13 +3,14 @@ package rcebot
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/database64128/cubic-rce-bot/jsoncfg"
+	"github.com/database64128/cubic-rce-bot/tslog"
 	"github.com/database64128/cubic-rce-bot/webhook"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"go.uber.org/zap"
 )
 
 // Runner loads the configuration and creates a handler.
@@ -17,7 +18,7 @@ type Runner struct {
 	configPath    string
 	config        Config
 	handler       *Handler
-	logger        *zap.Logger
+	logger        *tslog.Logger
 	bot           *bot.Bot
 	webhookServer *webhook.Server
 }
@@ -39,7 +40,7 @@ func (r *Runner) SaveConfig() error {
 }
 
 // NewRunner creates a new runner.
-func NewRunner(configPath string, logger *zap.Logger) (*Runner, error) {
+func NewRunner(configPath string, logger *tslog.Logger) (*Runner, error) {
 	r := Runner{
 		configPath: configPath,
 		handler:    NewHandler("", logger),
@@ -61,7 +62,7 @@ func NewRunner(configPath string, logger *zap.Logger) (*Runner, error) {
 		bot.WithWebhookSecretToken(r.config.Webhook.SecretToken),
 		bot.WithDefaultHandler(r.handler.Handle),
 		bot.WithErrorsHandler(func(err error) {
-			logger.Warn("Failed to handle update", zap.Error(err))
+			logger.Warn("Failed to handle update", tslog.Err(err))
 		}),
 		bot.WithAllowedUpdates(bot.AllowedUpdates{models.AllowedUpdateMessage}),
 	)
@@ -80,7 +81,7 @@ func (r *Runner) Start(ctx context.Context) error {
 	retryOnError := func(f func() error) error {
 		for {
 			if err := f(); err != nil {
-				r.logger.Warn("Failed to complete API request, retrying in 30 seconds", zap.Error(err))
+				r.logger.Warn("Failed to complete API request, retrying in 30 seconds", tslog.Err(err))
 				select {
 				case <-ctx.Done():
 					return ctx.Err()
@@ -125,12 +126,8 @@ func (r *Runner) Start(ctx context.Context) error {
 	}
 
 	if r.config.Webhook.Enabled {
-		var err error
-		r.webhookServer, err = r.config.Webhook.NewServer(r.logger, r.bot.WebhookHandler())
-		if err != nil {
-			return fmt.Errorf("failed to create webhook server: %w", err)
-		}
-		if err = r.webhookServer.Start(ctx); err != nil {
+		r.webhookServer = r.config.Webhook.NewServer(r.logger, r.bot.WebhookHandler())
+		if err := r.webhookServer.Start(ctx); err != nil {
 			return fmt.Errorf("failed to start webhook server: %w", err)
 		}
 		go r.bot.StartWebhook(ctx)
@@ -139,9 +136,9 @@ func (r *Runner) Start(ctx context.Context) error {
 	}
 
 	r.logger.Info("Started bot",
-		zap.Int64("id", me.ID),
-		zap.String("firstName", me.FirstName),
-		zap.String("username", me.Username),
+		slog.Int64("id", me.ID),
+		slog.String("firstName", me.FirstName),
+		slog.String("username", me.Username),
 	)
 
 	return nil
@@ -152,7 +149,7 @@ func (r *Runner) Stop() {
 	// Stop the webhook server if it exists.
 	if r.webhookServer != nil {
 		if err := r.webhookServer.Stop(); err != nil {
-			r.logger.Error("Failed to stop webhook server", zap.Error(err))
+			r.logger.Error("Failed to stop webhook server", tslog.Err(err))
 		}
 	}
 

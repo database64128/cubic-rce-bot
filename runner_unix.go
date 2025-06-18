@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"go.uber.org/zap"
+	"github.com/database64128/cubic-rce-bot/tslog"
 )
 
 func (r *Runner) registerSIGUSR1() {
@@ -16,7 +16,7 @@ func (r *Runner) registerSIGUSR1() {
 	go func() {
 		for range sigCh {
 			if err := r.loadConfig(); err != nil {
-				r.logger.Warn("Failed to reload config", zap.Error(err))
+				r.logger.Warn("Failed to reload config", tslog.Err(err))
 				continue
 			}
 			r.logger.Info("Reloaded config")

@@ -4,7 +4,5 @@ go 1.24.0
 
 require (
 	github.com/go-telegram/bot v1.15.0
-	go.uber.org/zap v1.27.0
+	github.com/lmittmann/tint v1.1.2
 )
-
-require go.uber.org/multierr v1.10.0 // indirect

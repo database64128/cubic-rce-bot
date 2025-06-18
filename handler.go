@@ -2,6 +2,7 @@ package rcebot
 
 import (
 	"context"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"
@@ -9,9 +10,9 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/database64128/cubic-rce-bot/tslog"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"go.uber.org/zap"
 )
 
 var Commands = []models.BotCommand{
@@ -57,7 +58,7 @@ func handleStart(ctx context.Context, b *bot.Bot, message *models.Message) error
 // Handler handles bot commands.
 type Handler struct {
 	botUsername      string
-	logger           *zap.Logger
+	logger           *tslog.Logger
 	wg               sync.WaitGroup
 	userCommandsByID atomic.Pointer[map[int64][]Command]
 	handleList       func(ctx context.Context, b *bot.Bot, message *models.Message, cmdArg string) error
@@ -66,7 +67,7 @@ type Handler struct {
 }
 
 // NewHandler returns a new handler for bot commands.
-func NewHandler(botUsername string, logger *zap.Logger) *Handler {
+func NewHandler(botUsername string, logger *tslog.Logger) *Handler {
 	h := Handler{
 		botUsername: botUsername,
 		logger:      logger,
@@ -106,14 +107,14 @@ func (h *Handler) Handle(ctx context.Context, b *bot.Bot, update *models.Update)
 		return
 	}
 
-	if ce := h.logger.Check(zap.DebugLevel, "Handling bot command"); ce != nil {
-		ce.Write(
-			zap.Int("id", message.ID),
-			zap.Int64("fromID", message.From.ID),
-			zap.String("fromFirstName", message.From.FirstName),
-			zap.String("fromUsername", message.From.Username),
-			zap.Int64("chatID", message.Chat.ID),
-			zap.String("text", message.Text),
+	if h.logger.Enabled(slog.LevelDebug) {
+		h.logger.Debug("Handling bot command",
+			slog.Int("id", message.ID),
+			slog.Int64("fromID", message.From.ID),
+			slog.String("fromFirstName", message.From.FirstName),
+			slog.String("fromUsername", message.From.Username),
+			slog.Int64("chatID", message.Chat.ID),
+			slog.String("text", message.Text),
 		)
 	}
 
@@ -132,24 +133,24 @@ func (h *Handler) Handle(ctx context.Context, b *bot.Bot, update *models.Update)
 	}
 	if err != nil {
 		h.logger.Warn("Failed to handle bot command",
-			zap.Int("id", message.ID),
-			zap.Int64("fromID", message.From.ID),
-			zap.String("fromFirstName", message.From.FirstName),
-			zap.String("fromUsername", message.From.Username),
-			zap.Int64("chatID", message.Chat.ID),
-			zap.String("text", message.Text),
-			zap.Error(err),
+			slog.Int("id", message.ID),
+			slog.Int64("fromID", message.From.ID),
+			slog.String("fromFirstName", message.From.FirstName),
+			slog.String("fromUsername", message.From.Username),
+			slog.Int64("chatID", message.Chat.ID),
+			slog.String("text", message.Text),
+			tslog.Err(err),
 		)
 		return
 	}
 
 	h.logger.Info("Handled bot command",
-		zap.Int("id", message.ID),
-		zap.Int64("fromID", message.From.ID),
-		zap.String("fromFirstName", message.From.FirstName),
-		zap.String("fromUsername", message.From.Username),
-		zap.Int64("chatID", message.Chat.ID),
-		zap.String("text", message.Text),
+		slog.Int("id", message.ID),
+		slog.Int64("fromID", message.From.ID),
+		slog.String("fromFirstName", message.From.FirstName),
+		slog.String("fromUsername", message.From.Username),
+		slog.Int64("chatID", message.Chat.ID),
+		slog.String("text", message.Text),
 	)
 }
 
