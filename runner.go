@@ -2,6 +2,7 @@ package rcebot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -81,6 +82,9 @@ func (r *Runner) Start(ctx context.Context) error {
 	retryOnError := func(f func() error) error {
 		for {
 			if err := f(); err != nil {
+				if isFatalAPIError(err) {
+					return err
+				}
 				r.logger.Warn("Failed to complete API request, retrying in 30 seconds", tslog.Err(err))
 				select {
 				case <-ctx.Done():
@@ -142,6 +146,28 @@ func (r *Runner) Start(ctx context.Context) error {
 	)
 
 	return nil
+}
+
+// isFatalAPIError returns whether the error is a fatal Telegram bot API error.
+func isFatalAPIError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	for {
+		e := errors.Unwrap(err)
+		if e == nil {
+			break
+		}
+		err = e
+	}
+
+	switch err {
+	case bot.ErrorForbidden, bot.ErrorBadRequest, bot.ErrorUnauthorized, bot.ErrorNotFound, bot.ErrorConflict:
+		return true
+	default:
+		return false
+	}
 }
 
 // Stop stops the runner.
