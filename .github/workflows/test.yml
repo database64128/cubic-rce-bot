@@ -40,5 +40,5 @@ jobs:
       - name: Upload Binaries
         uses: actions/upload-artifact@v4
         with:
-          name: cubic-rce-bot-${{ github.sha }}-${{ matrix.os }}-x86-64
+          name: cubic-rce-bot-${{ github.sha }}-${{ matrix.os }}-${{ runner.arch }}
           path: cubic-rce-bot*
