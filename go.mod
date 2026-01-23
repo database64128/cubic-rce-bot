@@ -3,6 +3,6 @@ module github.com/database64128/cubic-rce-bot
 go 1.25.0
 
 require (
-	github.com/go-telegram/bot v1.17.0
+	github.com/go-telegram/bot v1.18.0
 	github.com/lmittmann/tint v1.1.2
 )
