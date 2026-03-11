@@ -40,10 +40,18 @@ func init() {
 func main() {
 	flag.Parse()
 
+	mainModuleVersion := "unknown"
+	info, ok := debug.ReadBuildInfo()
+	if ok {
+		mainModuleVersion = info.Main.Version
+	}
+
 	if version {
-		if info, ok := debug.ReadBuildInfo(); ok {
-			os.Stdout.WriteString(info.String())
+		s := mainModuleVersion
+		if ok {
+			s = info.String()
 		}
+		os.Stdout.WriteString(s)
 		return
 	}
 
@@ -55,6 +63,7 @@ func main() {
 		UseJSONHandler: logJSON,
 	}
 	logger := logCfg.NewLogger(os.Stderr)
+	logger.Info("cubic-rce-bot", slog.String("version", mainModuleVersion))
 
 	r, err := rcebot.NewRunner(confPath, logger)
 	if err != nil {
@@ -82,11 +91,9 @@ func main() {
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-ctx.Done()
-		logger.Info("Received exit signal")
+	_ = context.AfterFunc(ctx, func() {
 		stop()
-	}()
+	})
 
 	if err = r.Start(ctx); err != nil {
 		logger.Error("Failed to start bot runner", tslog.Err(err))
@@ -94,5 +101,6 @@ func main() {
 	}
 
 	<-ctx.Done()
+	logger.Info("Shutting down", slog.Any("reason", context.Cause(ctx)))
 	r.Stop()
 }
