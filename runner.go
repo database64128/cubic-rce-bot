@@ -26,7 +26,7 @@ type Runner struct {
 
 func (r *Runner) loadConfig() error {
 	var config Config
-	if err := jsoncfg.Open(r.configPath, &config); err != nil {
+	if err := jsoncfg.Load(r.configPath, &config); err != nil {
 		return err
 	}
 
