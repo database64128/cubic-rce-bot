@@ -4,5 +4,5 @@ go 1.26.0
 
 require (
 	github.com/go-telegram/bot v1.22.0
-	github.com/lmittmann/tint v1.1.3
+	github.com/lmittmann/tint v1.2.0
 )
