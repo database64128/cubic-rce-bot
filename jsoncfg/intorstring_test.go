@@ -2,7 +2,7 @@ package jsoncfg_test
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/v2"
 	"testing"
 
 	"github.com/database64128/cubic-rce-bot/jsoncfg"
@@ -183,11 +183,11 @@ func TestIntOrStringUnmarshalJSON(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			var v jsoncfg.IntOrString
-			if err := v.UnmarshalJSON([]byte(c.input)); (err != nil) != c.expectErr {
-				t.Fatalf("v.UnmarshalJSON(%s) failed: %v", c.input, err)
+			if err := json.Unmarshal([]byte(c.input), &v); (err != nil) != c.expectErr {
+				t.Fatalf("json.Unmarshal(%q) failed: %v", c.input, err)
 			}
 			if !v.Equals(c.expected) {
-				t.Errorf("v.UnmarshalJSON(%s) = %#v, want %#v", c.input, v, c.expected)
+				t.Errorf("json.Unmarshal(%q) = %#v, want %#v", c.input, v, c.expected)
 			}
 		})
 	}

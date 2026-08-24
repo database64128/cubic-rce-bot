@@ -1,6 +1,6 @@
 module github.com/database64128/cubic-rce-bot
 
-go 1.26.0
+go 1.27.0
 
 require (
 	github.com/go-telegram/bot v1.23.0

@@ -1,7 +1,9 @@
 package jsoncfg
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
+	"strconv"
 	"unsafe"
 )
 
@@ -95,38 +97,45 @@ func (v IntOrString) Equals(other IntOrString) bool {
 	}
 }
 
-// MarshalJSON implements [json.Marshaler].
-func (v IntOrString) MarshalJSON() ([]byte, error) {
+// MarshalJSONTo implements [json.MarshalerTo].
+func (v IntOrString) MarshalJSONTo(enc *jsontext.Encoder) error {
+	var t jsontext.Token
 	switch v.kind {
 	case IntOrStringKindInt:
-		return json.Marshal(v.len)
+		t = jsontext.Int(int64(v.len))
 	case IntOrStringKindString:
-		return json.Marshal(v.string())
+		t = jsontext.String(v.string())
 	default:
-		return []byte("null"), nil
+		t = jsontext.Null
 	}
+	return enc.WriteToken(t)
 }
 
-// UnmarshalJSON implements [json.Unmarshaler].
-func (v *IntOrString) UnmarshalJSON(data []byte) error {
-	if string(data) == "null" {
-		*v = IntOrString{}
-		return nil
-	}
-
-	if len(data) >= 2 && data[0] == '"' && data[len(data)-1] == '"' {
-		var s string
-		if err := json.Unmarshal(data, &s); err != nil {
-			return err
-		}
-		*v = IntOrStringFromString(s)
-		return nil
-	}
-
-	var i int
-	if err := json.Unmarshal(data, &i); err != nil {
+// UnmarshalJSONFrom implements [json.UnmarshalerFrom].
+func (v *IntOrString) UnmarshalJSONFrom(dec *jsontext.Decoder) error {
+	t, err := dec.ReadToken()
+	if err != nil {
 		return err
 	}
-	*v = IntOrStringFromInt(i)
+
+	switch k := t.Kind(); k {
+	case jsontext.KindNull:
+		*v = IntOrString{}
+	case jsontext.KindNumber:
+		i64, err := t.Int()
+		if err != nil {
+			return &json.SemanticError{JSONKind: k, Err: err}
+		}
+		i := int(i64)
+		if int64(i) != i64 {
+			return &json.SemanticError{JSONKind: k, Err: strconv.ErrRange}
+		}
+		*v = IntOrStringFromInt(i)
+	case jsontext.KindString:
+		*v = IntOrStringFromString(t.String())
+	default:
+		return &json.SemanticError{JSONKind: k}
+	}
+
 	return nil
 }
