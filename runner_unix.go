@@ -15,11 +15,13 @@ func (r *Runner) registerSIGUSR1() {
 	signal.Notify(sigCh, syscall.SIGUSR1)
 	go func() {
 		for range sigCh {
+			r.notifyStatus.Reloading()
 			if err := r.loadConfig(); err != nil {
 				r.logger.Warn("Failed to reload config", tslog.Err(err))
-				continue
+			} else {
+				r.logger.Info("Reloaded config")
 			}
-			r.logger.Info("Reloaded config")
+			r.notifyStatus.Ready()
 		}
 	}()
 }

@@ -22,6 +22,7 @@ type Runner struct {
 	logger        *tslog.Logger
 	bot           *bot.Bot
 	webhookServer *webhook.Server
+	notifyStatus  statusNotifier
 }
 
 func (r *Runner) loadConfig() error {
@@ -47,7 +48,6 @@ func NewRunner(configPath string, logger *tslog.Logger) (*Runner, error) {
 		handler:    NewHandler("", logger),
 		logger:     logger,
 	}
-	r.registerSIGUSR1()
 	if err := r.loadConfig(); err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
@@ -78,7 +78,18 @@ func NewRunner(configPath string, logger *tslog.Logger) (*Runner, error) {
 }
 
 // Start starts the runner.
-func (r *Runner) Start(ctx context.Context) error {
+func (r *Runner) Start(ctx context.Context) (err error) {
+	r.notifyStatus = newStatusNotifier(ctx)
+	if r.notifyStatus.IsValid() {
+		stop := r.notifyStatus.ExtendTimeout()
+		defer func() {
+			stop()
+			if err == nil {
+				r.notifyStatus.Ready()
+			}
+		}()
+	}
+
 	retryOnError := func(f func() error) error {
 		for {
 			if err := f(); err != nil {
@@ -139,6 +150,8 @@ func (r *Runner) Start(ctx context.Context) error {
 		go r.bot.Start(ctx)
 	}
 
+	r.registerSIGUSR1()
+
 	r.logger.Info("Started bot",
 		slog.Int64("id", me.ID),
 		slog.String("firstName", me.FirstName),
@@ -172,6 +185,8 @@ func isFatalAPIError(err error) bool {
 
 // Stop stops the runner.
 func (r *Runner) Stop() {
+	r.notifyStatus.Stopping()
+
 	// Stop the webhook server if it exists.
 	if r.webhookServer != nil {
 		if err := r.webhookServer.Stop(); err != nil {
@@ -181,4 +196,6 @@ func (r *Runner) Stop() {
 
 	// Wait for all running commands to exit.
 	r.handler.Wait()
+
+	r.notifyStatus.Close()
 }

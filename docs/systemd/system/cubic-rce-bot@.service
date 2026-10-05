@@ -4,8 +4,9 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+Type=notify-reload
 ExecStart=/usr/bin/cubic-rce-bot -confPath /etc/cubic-rce-bot/%i.json -logNoTime
-ExecReload=/usr/bin/kill -USR1 $MAINPID
+ReloadSignal=SIGUSR1
 
 [Install]
 WantedBy=multi-user.target
