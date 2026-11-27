@@ -109,7 +109,7 @@ func (r *Runner) Start(ctx context.Context) (err error) {
 		return nil
 	}
 
-	var me *models.User
+	var me *models.BotFullInfo
 
 	if err := retryOnError(func() (err error) {
 		me, err = r.bot.GetMe(ctx)
